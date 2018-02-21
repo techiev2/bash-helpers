@@ -1,0 +1,27 @@
+#! /bin/bash
+
+SCRIPT=$(readlink -f $BASH_SOURCE)
+SCRIPT_DIR=$(dirname $SCRIPT)
+
+# Helper to generate an argparse like argument hashmap
+# Caveat emptor: Requires the downstream consumer to declare an
+# associative array named PROC_ARGS
+# TODO: Find a way to not depend on a hardcoded associative array name
+# TODO: Fix the rudimentary walk by an array index based flow to skip
+#       argument value entries being processed.
+getArguments() {
+    i=0
+    args="${@}"
+    hashKey=""
+    for k in $args; do
+        if [[ "$k" == "-"* ]]; then
+            hashKey=$k
+        else
+            if [[ "$hashKey" != "" ]]; then
+                PROC_ARGS[$hashKey]=$k
+                hashKey=""
+            fi
+        fi
+        i=$(($i+1))
+    done
+}
