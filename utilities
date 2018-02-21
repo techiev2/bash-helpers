@@ -25,3 +25,28 @@ getArguments() {
         i=$(($i+1))
     done
 }
+
+importFrom() {
+    # Helper to inject into scope individual variables without doing
+    # a source of the entire script file.
+    # Caveat emptor: Requires imports to be in the form of
+    #   importFrom <file> <variable 1>, <variable 2>
+    # TODO: Find a robust mode of handling varying patterns.
+    args=($@)
+    sourceFile="${args[0]}"
+    if [ ! -f "$sourceFile" ] || [ ! -s "$sourceFile" ]; then
+        echo -e "Unable to import from $sourceFile"
+        exit 1
+    fi
+
+    for f in "${args[@]:1}"; do
+        f="${f//,}"
+        content=$(grep "$f=" $sourceFile)
+        if [[ "$content" == "" ]]; then
+            echo "Unable to import $f from $sourceFile"
+            exit 1
+        fi
+        IFS='=' read -r -a varArr <<< "$content"
+        export "$f"="${varArr[1]}"
+    done
+}
