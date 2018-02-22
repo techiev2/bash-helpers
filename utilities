@@ -47,6 +47,8 @@ importFrom() {
             exit 1
         fi
         IFS='=' read -r -a varArr <<< "$content"
-        export "$f"="${varArr[1]}"
+        value="${varArr[1]}"
+        value="${value//\"}"
+        export "$f"="$value"
     done
 }
