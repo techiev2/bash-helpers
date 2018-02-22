@@ -41,12 +41,13 @@ importFrom() {
 
     for f in "${args[@]:1}"; do
         f="${f//,}"
-        content=$(grep "$f=" $sourceFile)
-        if [[ "$content" == "" ]]; then
+        sourceContents=$(cat $sourceFile)
+        match=$(echo $(echo "$sourceContents" | grep -e "$f="))
+        if [[ "$match" == "" ]]; then
             echo "Unable to import $f from $sourceFile"
             exit 1
         fi
-        IFS='=' read -r -a varArr <<< "$content"
+        IFS='=' read -r -a varArr <<< "$match"
         value="${varArr[1]}"
         value="${value//\"}"
         export "$f"="$value"
