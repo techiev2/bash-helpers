@@ -232,7 +232,13 @@ END
 
 runLocalServer() {
   printMessageLine "Starting server.."
+  trap ctrl_c INT
   $venv/bin/python $server $1
+}
+
+ctrl_c() {
+  clear
+  printMessageLine "Exiting server.."
 }
 
 
