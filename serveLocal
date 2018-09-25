@@ -142,6 +142,7 @@ import mimetypes
 
 from tornado.web import Application, RequestHandler, asynchronous
 from tornado.ioloop import IOLoop
+from tornado.escape import url_escape
 from tornado.gen import Task, engine
 
 try:
@@ -162,11 +163,12 @@ def render_path_contents(_path, _prefix):
         _prefix = ""
     response = ""
     for _ in _contents:
+        __ = url_escape(_, plus=False)
         response += "".join([
             "<a href=http://localhost:{}/{}{}>",
             "{}</a><br />"
         ]).format(
-            PORT, _prefix, _, _
+            PORT, _prefix, __, _
         )
     return response
 
