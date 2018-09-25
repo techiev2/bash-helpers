@@ -1,0 +1,255 @@
+#! /bin/bash
+# Author: Sriram Velamur <sriram.velamur@gmail.com>
+
+FILE="$BASH_SOURCE"
+if [[ "$FILE" == "" ]]; then
+  FILE="$0"
+fi
+export YAH="\033[1m\xE2\x9C\x94\033[0m"
+export NAAH="\033[1m\xE2\x9D\x8C\033[0m"
+export RED='\033[0;31m'
+export YELLOW='\033[0;33m'
+export NC='\033[0m'
+export GREEN='\033[0;32m'
+export PFX="\033[1m\xE2\x9E\x94\033[0m"
+export EXCLAIM="\033[1m\xE2\x9A\xA0\033[0m"
+export WARN="\033[1m\xE2\x9A\xA1\033[0m"
+export THUMBSUP="\033[1m\xF0\x9F\x91\x8D\033[0m"
+export WINE="\033[1m\xF0\x9F\x8D\xB7\033[0m"
+
+bold=$(tput bold)
+normal=$(tput sgr0)
+
+
+boldText() {
+  echo -e "\e\[1m$1 \e\[21m"
+}
+
+printError() {
+  echo -e "${RED}$NAAH${NC} $1"
+}
+
+printWarning() {
+  echo -e "${YELLOW}$WARN${NC} $1"
+}
+
+underline() {
+  echo -e "\e[4m$1"
+}
+greenText() {
+  echo -e "${GREEN}$1${NC}"
+}
+redText() {
+  echo -e "${RED}$1${NC}"
+}
+
+yellowText() {
+  echo -e "${YELLOW}$1${NC}"
+}
+
+compose() {
+  result_fun=$1; shift
+  f1=$1; shift
+  f2=$1; shift
+  eval "$result_fun() {
+    $f1 \$($f2 \$\*);
+  }"
+}
+compose green_underline greenText underline
+compose yellow_underline yellowText underline
+compose red_underline redText underline
+compose bold_red_underline redText boldText underline
+
+printSuccess() {
+  if [[ "$2" == "" ]]; then
+    marker="$YAH"
+  else
+    marker="$2"
+  fi
+  echo -e "${GREEN}${marker}${NC} $1"
+}
+
+printMessageLine() {
+  if [[ "$2" == "" ]]; then
+    marker="$PFX"
+  else
+    marker="$2"
+  fi
+  echo -e "${bold}${GREEN}${marker} ${NC}${normal} $1"
+}
+
+checkFileAndExit() {
+  if [[ ! -f "$1" ]]; then
+    printError "$2"
+    exit 1
+  fi
+  if [[ "$3" == true ]]; then
+    if [ ! -s "$1" ]; then
+      printError "File $1 is empty"
+      exit 1
+    fi
+  fi
+}
+
+declare -A procArgs
+getArguments() {
+  hasStart=false
+  args=$@
+  for var in ${args[*]}; do
+    if [[ "$var" == "-"* ]]; then
+      hasStart=true
+      key="$var"
+    else
+      if [[ $hasStart == true ]]; then
+        procArgs[$key]=$var
+      fi
+    fi
+  done
+}
+
+getRandomString() {
+  echo -e $(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)
+}
+
+SCRIPT=$(realpath $FILE)
+SCRIPT_DIR=$(dirname $SCRIPT)
+APP_ROOT_DIR=$(realpath $(dirname $SCRIPT_DIR))
+
+# Check if Python3 is available, else fall back to Python2
+py3=$(which python3)
+if [[ $py3 != "" ]]; then
+  PY=$py3
+else
+  PY=$(which python2)
+fi
+# Create a virtualenv for running the server.
+venv="$HOME/.serve-env"
+server="$venv/.server.py"
+
+generateServerScript() {
+  s=$(cat <<-END
+"""Tornado local server script"""
+
+# pylint: disable=C0413
+
+__all__ = ("serve",)
+__author__ = "Sriram Velamur<sriram@tenreads.io>"
+
+import sys
+sys.dont_write_bytecode = True
+from os import path, getcwd, listdir
+import mimetypes
+
+from tornado.web import Application, RequestHandler, asynchronous
+from tornado.ioloop import IOLoop
+from tornado.gen import Task, engine
+
+try:
+    PORT = int(sys.argv[1])
+except (TypeError, ValueError, IndexError):
+    PORT = 9000
+
+
+def get_mime_type(_path):
+    return mimetypes.guess_type(_path)[0]
+
+
+def render_path_contents(_path, _prefix):
+    _contents = [
+        _ for _ in listdir(_path) if not _.startswith(".")
+    ]
+    if not _prefix:
+        _prefix = ""
+    response = ""
+    for _ in _contents:
+        response += "".join([
+            "<a href=http://localhost:{}/{}{}>",
+            "{}</a><br />"
+        ]).format(
+            PORT, _prefix, _, _
+        )
+    return response
+
+
+class FileHandler(RequestHandler):
+
+    @asynchronous
+    @engine
+    def get(self, *args, **kwargs):
+        _file_path = path.join(getcwd(), self.path_kwargs.get("path"))
+        if not path.isfile(_file_path):
+            if path.isdir(_file_path):
+                self.set_status(200)
+                response = render_path_contents(
+                    _path=_file_path,
+                    _prefix="{}/".format(self.path_kwargs.get("path"))
+                )
+                self.write(response)
+                self.finish()
+            else:
+                self.set_status(404)
+                self.write("File not found at {}!".format(
+                    _file_path
+                ))
+                self.finish()
+        else:
+            self.set_header("Content-Type", get_mime_type(_file_path))
+            self.set_header("Content-Length", path.getsize(_file_path))
+            self.flush()
+            CHUNK_SIZE = 512000
+            fd = open(_file_path, "rb")
+            data = fd.read(CHUNK_SIZE)
+            while data:
+                self.write(data)
+                yield Task(self.flush)
+                data = fd.read(CHUNK_SIZE)
+            fd.close()
+            self.finish()
+
+
+class RootHandler(RequestHandler):
+
+    def get(self):
+        response = render_path_contents(_path=getcwd(), _prefix=None)
+        self.write(response)
+        self.finish()
+
+
+if __name__ == '__main__':
+    APP = Application([
+        ("^/?$", RootHandler),
+        ("/(?P<path>.*?)/?", FileHandler)
+    ], auto_reload=True)
+    APP.listen(PORT)
+    IOLoop.instance().start()
+
+END
+)
+  echo "$s" > $server
+}
+
+runLocalServer() {
+  printMessageLine "Starting server.."
+  $venv/bin/python $server $1
+}
+
+
+if [[ -d $venv ]]; then
+  printSuccess "Environment found."
+else
+  printMessageLine "Creating a virtual environ"
+  res=$(virtualenv -p $PY $venv 2>&1)
+fi
+tornadoLib=$($venv/bin/pip list | grep tornado 2>&1)
+if [[ "$tornadoLib" == "" ]]; then
+  echo $tornadoLib
+  printMessageLine "Installing Tornado to serve files"
+  res=$("$venv/bin/pip" install tornado 2>&1)
+fi
+
+if [[ ! -f $server ]]; then
+  printWarning "No server script found. Generating"
+  generateServerScript
+fi
+
+runLocalServer $1
