@@ -1,0 +1,55 @@
+#! /bin/bash
+
+SCRIPT=$(readlink -f $BASH_SOURCE)
+SCRIPT_DIR=$(dirname $SCRIPT)
+
+# Helper to generate an argparse like argument hashmap
+# Caveat emptor: Requires the downstream consumer to declare an
+# associative array named PROC_ARGS
+# TODO: Find a way to not depend on a hardcoded associative array name
+# TODO: Fix the rudimentary walk by an array index based flow to skip
+#       argument value entries being processed.
+getArguments() {
+    i=0
+    args="${@}"
+    hashKey=""
+    for k in $args; do
+        if [[ "$k" == "-"* ]]; then
+            hashKey=$k
+        else
+            if [[ "$hashKey" != "" ]]; then
+                PROC_ARGS[$hashKey]=$k
+                hashKey=""
+            fi
+        fi
+        i=$(($i+1))
+    done
+}
+
+importFrom() {
+    # Helper to inject into scope individual variables without doing
+    # a source of the entire script file.
+    # Caveat emptor: Requires imports to be in the form of
+    #   importFrom <file> <variable 1>, <variable 2>
+    # TODO: Find a robust mode of handling varying patterns.
+    args=($@)
+    sourceFile="${args[0]}"
+    if [ ! -f "$sourceFile" ] || [ ! -s "$sourceFile" ]; then
+        echo -e "Unable to import from $sourceFile"
+        exit 1
+    fi
+
+    for f in "${args[@]:1}"; do
+        f="${f//,}"
+        sourceContents=$(cat $sourceFile)
+        match=$(echo $(echo "$sourceContents" | grep -e "$f="))
+        if [[ "$match" == "" ]]; then
+            echo "Unable to import $f from $sourceFile"
+            exit 1
+        fi
+        IFS='=' read -r -a varArr <<< "$match"
+        value="${varArr[1]}"
+        value="${value//\"}"
+        export "$f"="$value"
+    done
+}
